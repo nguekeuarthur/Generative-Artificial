@@ -91,12 +91,13 @@ closeChat.addEventListener('click', () => {
 });
 
 // Fonction pour ajouter un message dans le chat
-function addMessage(message, isUser = false) {
+function addMessage(message, isUser = false, isLoading = false) {
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+    messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'} ${isLoading ? 'loading' : ''}`;
     messageDiv.textContent = message;
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
+    return messageDiv; // Retourner l'élément pour pouvoir le modifier plus tard
 }
 
 // Fonction pour envoyer un message à l'API Gemini
@@ -112,40 +113,55 @@ async function sendToGemini(message) {
         });
         
         console.log('Status:', response.status);
+        
+        // Attendre la réponse complète
         const data = await response.json();
         console.log('Réponse reçue:', data);
         
-        if (!response.ok) {
-            throw new Error(data.error || 'Erreur de communication avec le serveur');
+        if (!data.response) {
+            throw new Error('Format de réponse invalide');
         }
         
         return data.response;
     } catch (error) {
-        console.error('Erreur:', error);
-        return `Erreur: ${error.message}`;
+        console.error('Erreur détaillée:', error);
+        throw error;
     }
 }
 
 // Gestion de l'envoi des messages
 sendMessage.addEventListener('click', async () => {
     const message = userInput.value.trim();
-    if (message) {
-        addMessage(message, true);
-        userInput.value = '';
-        userInput.disabled = true;
-        sendMessage.disabled = true;
+    if (!message) return;
+
+    // Désactiver l'interface pendant l'envoi
+    userInput.value = '';
+    userInput.disabled = true;
+    sendMessage.disabled = true;
+
+    // Afficher le message de l'utilisateur
+    addMessage(message, true);
+
+    // Créer un message de chargement
+    const loadingMessage = addMessage("En attente de réponse...", false, true);
+    
+    try {
+        // Attendre la réponse sans limite de temps
+        const response = await sendToGemini(message);
         
-        try {
-            const response = await sendToGemini(message);
-            addMessage(response);
-        } catch (error) {
-            addMessage("Désolé, une erreur s'est produite lors de la communication avec le service.");
-            console.error('Erreur:', error);
-        } finally {
-            userInput.disabled = false;
-            sendMessage.disabled = false;
-            userInput.focus();
-        }
+        // Supprimer le message de chargement et afficher la réponse
+        loadingMessage.remove();
+        addMessage(response);
+    } catch (error) {
+        // Supprimer le message de chargement et afficher l'erreur
+        loadingMessage.remove();
+        addMessage(`Erreur: ${error.message}`, false);
+        console.error('Erreur:', error);
+    } finally {
+        // Réactiver l'interface
+        userInput.disabled = false;
+        sendMessage.disabled = false;
+        userInput.focus();
     }
 });
 
